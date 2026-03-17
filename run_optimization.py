@@ -13,7 +13,7 @@ from jaxsce.coordinates_3d import get_coordinate_system
 from jaxsce.densities.bohr_atom import BohrAtom
 from jaxsce.densities.pyscf import CCSDDensity, HFDensity
 from jaxsce.densities.sqrt_r import SqrtR
-from jaxsce.integrate import VeeIntegration
+from jaxsce.integrate import VeeIntegration, sce_winf_prime_model
 from jaxsce.optimize import AngularOptimization, AngularOptimizationResult, TwoElectron
 
 config.update("jax_enable_x64", True)
@@ -260,6 +260,7 @@ if __name__ == "__main__":
     ints_time = timer()
 
     Winf = extrapolated_integrals["bpoly_2"][1] - density.U
+    W1inf_model = sce_winf_prime_model(opt_result)
     Lambda = -Winf / density.LDA_int
     B = (Winf - A * density.LDA_int) / density.GEA_int
 
@@ -270,6 +271,7 @@ if __name__ == "__main__":
         "LDA_int": density.LDA_int,
         "GEA_int": density.GEA_int,
         "Winf": Winf,
+        "W1inf_model": W1inf_model,
         "Lambda": Lambda,
         "B": B,
     }
