@@ -131,7 +131,7 @@ class PyscfDensity(Density, metaclass=abc.ABCMeta):
         self.add_jvps()
 
         # Compute the integrals LDA_int and GEA_int
-        r, dr = dft.radi.treutler(self.N_int)
+        r, dr = self._radial_grid(self.N_int)
         rho_r = self.rho(r)
         self.LDA_int = np.sum(dr * 4 * np.pi * r**2 * rho_r ** (4 / 3))
         non_zero = np.where(rho_r > self.rho_trunc)
@@ -163,6 +163,25 @@ class PyscfDensity(Density, metaclass=abc.ABCMeta):
         )
         return encode_dict
 
+
+    def _radial_grid(self, npoints: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Get PySCF radial grid while handling API differences across versions."""
+
+        try:
+            return dft.radi.treutler(npoints)
+        except TypeError:
+            return dft.radi.treutler(npoints, NUC[self.atom])
+
+    def _dm_total(self) -> np.ndarray:
+        """Return a spin-summed 2D AO density matrix."""
+
+        dm = np.asarray(self.dm)
+        if dm.ndim == 2:
+            return dm
+        if dm.ndim == 3:
+            return np.sum(dm, axis=0)
+        raise ValueError(f"Unsupported density matrix shape {dm.shape}")
+
     def build_grid_guess(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Build a grid of radial coordinates
@@ -177,7 +196,7 @@ class PyscfDensity(Density, metaclass=abc.ABCMeta):
         dr : (npoints,) array
             Grid spacing. (4 * np.pi * r**2 * dr = weight)
         """
-        r_grid, dr = dft.radi.treutler(self.N_points_Ne)
+        r_grid, dr = self._radial_grid(self.N_points_Ne)
         Ne_grid = self.Ne(r_grid)
         return r_grid, Ne_grid, dr
 
@@ -237,9 +256,9 @@ class PyscfDensity(Density, metaclass=abc.ABCMeta):
         ints = (ints + ints.transpose(1, 0, 2)) / 2
         if isinstance(r, (int, float)):
             # einsum returns an array instead of a float if the input is a float
-            return np.einsum("ijp,ij->p", ints, self.dm)[0]
+            return np.einsum("ijp,ij->p", ints, self._dm_total())[0]
         # We reshape the result to match the shape of r
-        return np.einsum("ijp,ij->p", ints, self.dm).reshape(r.shape)
+        return np.einsum("ijp,ij->p", ints, self._dm_total()).reshape(r.shape)
 
     def vH_deriv(self, r: np.ndarray) -> np.ndarray:
         # We compute vH_deriv using a fakemol with very sharply peaked Gaussians
@@ -255,9 +274,9 @@ class PyscfDensity(Density, metaclass=abc.ABCMeta):
         ints = ints + ints.transpose(1, 0, 2)
         if isinstance(r, (int, float)):
             # einsum returns an array instead of a float if the input is a float
-            return np.einsum("ijp,ij->p", ints, self.dm)[0]
+            return np.einsum("ijp,ij->p", ints, self._dm_total())[0]
         # We reshape the result to match the shape of r
-        return np.einsum("ijp,ij->p", ints, self.dm).reshape(r.shape)
+        return np.einsum("ijp,ij->p", ints, self._dm_total()).reshape(r.shape)
 
     def Ne(self, r: np.ndarray) -> np.ndarray:
         # v_H(r) = Ne(r)/r + coNe(r)
@@ -290,7 +309,7 @@ class HFDensity(PyscfDensity):
         self.name = "hartree-fock"
 
         # Setup the RHF calculation
-        mf = scf.RHF(self.mol)
+        mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
         mf.conv_tol = 1e-12
         mf.conv_tol_grad = 1e-11
         mf.max_cycle = 1000
@@ -315,7 +334,10 @@ class HFDensity(PyscfDensity):
 
         # Build the Hartree-Fock density matrix in the AO basis
         self.dm = mf.make_rdm1()
-        self.U = np.trace(self.dm.dot(mf.get_j())) / 2
+        jmat = np.asarray(mf.get_j())
+        if jmat.ndim == 3:
+            jmat = np.sum(jmat, axis=0)
+        self.U = np.trace(self._dm_total().dot(jmat)) / 2
 
         # Now build the grid for Ne inversion, and calculate integrals
         self.__post_init__()
@@ -367,7 +389,7 @@ class CCSDDensity(PyscfDensity):
             self.dm = np.load(dm_file)
         else:
             # Run RHF calculation if necessary
-            mf = scf.RHF(self.mol)
+            mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
             mf.conv_tol = 1e-12
             mf.conv_tol_grad = 1e-11
             mf.max_cycle = 1000

@@ -510,9 +510,9 @@ class AllAngles(SphericalCoordinateSystem):
         phi = 2 * jnp.pi * random.uniform(self.key, (*args, Nel))
 
         # Zero first electron angles and second electron azimuthal angle
-        theta[..., 0] = 0.0
-        phi[..., 0] = 0.0
-        phi[..., 1] = 0.0
+        theta = theta.at[..., 0].set(0.0)
+        phi = phi.at[..., 0].set(0.0)
+        phi = phi.at[..., 1].set(0.0)
 
         # Stack angles
         angles = jnp.concatenate((theta, phi), axis=-1)
