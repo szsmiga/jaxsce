@@ -6,7 +6,7 @@ from timeit import default_timer as timer
 
 # Numpy and jax for numerics
 import jax.numpy as jnp
-from jax.config import config
+from jax import config
 
 from jaxsce.constants import A
 from jaxsce.coordinates_3d import get_coordinate_system
@@ -260,7 +260,15 @@ if __name__ == "__main__":
     ints_time = timer()
 
     Winf = extrapolated_integrals["bpoly_2"][1] - density.U
-    W1inf_model = sce_winf_prime_model(opt_result)
+    W1inf_model = sce_winf_prime_model(
+        opt_result,
+        mode="cartesian_fd_epot",
+        mu_start=3,
+        eig_transform="sqrt",
+        prefactor=1.0,
+        fd_eps=1e-4,
+        check_local_minimum=True,
+    )
     Lambda = -Winf / density.LDA_int
     B = (Winf - A * density.LDA_int) / density.GEA_int
 

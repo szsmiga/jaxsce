@@ -34,6 +34,34 @@ def to_3D_vector(r: Union[float, np.ndarray]) -> np.ndarray:
     return np.concatenate([r[..., None], np.zeros((*r.shape, 2))], axis=-1)
 
 
+def _transform_dm_to_ao(dm_mo, mo_coeff) -> np.ndarray:
+    """Transform a density matrix from MO basis to AO basis.
+
+    Supports both restricted (single matrix) and unrestricted (alpha/beta)
+    representations returned by PySCF.
+    """
+
+    if isinstance(dm_mo, tuple):
+        dm_mo = np.stack(dm_mo, axis=0)
+    dm_mo = np.asarray(dm_mo)
+
+    if isinstance(mo_coeff, tuple):
+        mo_coeff = np.stack(mo_coeff, axis=0)
+    mo_coeff = np.asarray(mo_coeff)
+
+    if dm_mo.ndim == 2 and mo_coeff.ndim == 2:
+        return mo_coeff @ dm_mo @ mo_coeff.T
+    if dm_mo.ndim == 3 and mo_coeff.ndim == 3:
+        return np.einsum("xpi,xij,xqj->xpq", mo_coeff, dm_mo, mo_coeff)
+    if dm_mo.ndim == 3 and mo_coeff.ndim == 2:
+        return np.einsum("pi,xij,qj->xpq", mo_coeff, dm_mo, mo_coeff)
+
+    raise ValueError(
+        "Incompatible MO density/molecular-orbital coefficient shapes: "
+        f"dm={dm_mo.shape}, mo_coeff={mo_coeff.shape}"
+    )
+
+
 class PyscfDensity(Density, metaclass=abc.ABCMeta):
     """
     Base class for densities from PySCF.
@@ -304,12 +332,23 @@ class HFDensity(PyscfDensity):
 
     __doc__ = PyscfDensity.__doc__ + __doc__
 
-    def __init__(self, chkfile_name: str = "", chkfile_dir="", **kwargs):
+    def __init__(
+        self,
+        chkfile_name: str = "",
+        chkfile_dir="",
+        fractional_occ: bool = True,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.name = "hartree-fock"
+        self.fractional_occ = fractional_occ
 
         # Setup the RHF calculation
         mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
+        if self.spin != 0 and fractional_occ:
+            # For open-shell atoms, use fractional occupations for degenerate
+            # frontier levels to keep the density closer to spherical.
+            mf = scf.addons.frac_occ(mf)
         mf.conv_tol = 1e-12
         mf.conv_tol_grad = 1e-11
         mf.max_cycle = 1000
@@ -344,7 +383,13 @@ class HFDensity(PyscfDensity):
 
     def encode(self) -> Dict[str, Union[str, float, int]]:
         encode_dict = super().encode()
-        encode_dict.update({"chkfile_name": self.chkfile_name, "chkfile_dir": self.chkfile_dir})
+        encode_dict.update(
+            {
+                "chkfile_name": self.chkfile_name,
+                "chkfile_dir": self.chkfile_dir,
+                "fractional_occ": self.fractional_occ,
+            }
+        )
         return encode_dict
 
 
@@ -406,14 +451,15 @@ class CCSDDensity(PyscfDensity):
             # Run CCSD calculation
             ccsd = cc.CCSD(mf)
             ccsd.kernel()
-            self.dm = ccsd.make_rdm1()
+            dm_mo = ccsd.make_rdm1()
 
             # Transform the density matrix to the AO basis
-            self.dm = mf.mo_coeff.dot(self.dm.dot(mf.mo_coeff.T))
+            self.dm = _transform_dm_to_ao(dm_mo, mf.mo_coeff)
             np.save(dm_file, self.dm)
 
         eris = self.mol.intor("int2e")
-        self.U = 1 / 2 * np.einsum("pqrs,pq,rs->", eris, self.dm, self.dm)
+        dm_tot = self._dm_total()
+        self.U = 1 / 2 * np.einsum("pqrs,pq,rs->", eris, dm_tot, dm_tot)
 
         # Now build the grid for Ne inversion, and calculate integrals
         self.__post_init__()

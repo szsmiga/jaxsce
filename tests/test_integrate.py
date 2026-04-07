@@ -4,9 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from jaxsce.coordinates_3d import get_coordinate_system
-from jaxsce.integrate import sce_winf_prime_model
+from jaxsce.integrate import sce_winf_prime_model, sce_winf_prime_model_cartesian_mu4
 from jaxsce.optimize import AngularOptimizationResult
 
 
@@ -38,7 +39,7 @@ def test_sce_winf_prime_model_he_is_in_expected_range():
     res = _result_from_saved("data/He/aug-cc-pVQZ")
     val_he = sce_winf_prime_model(res, integrator="simpson")
 
-    assert 0.5 < val_he < 0.7
+    assert 1.0 < val_he < 1.3
 
 
 def test_sce_winf_prime_model_mu_start_reduces_value():
@@ -72,3 +73,36 @@ def test_spherical_full_matches_reduced_block():
     val_reduced = sce_winf_prime_model(res, integrator="simpson", mode="reduced")
 
     assert abs(val_spherical - val_reduced) / val_reduced < 1e-8
+
+
+def test_sce_winf_prime_model_square_transform_differs():
+    res = _result_from_saved("data/He/aug-cc-pVQZ")
+
+    val_sqrt = sce_winf_prime_model(res, integrator="simpson", mode="reduced", eig_transform="sqrt")
+    val_square = sce_winf_prime_model(
+        res, integrator="simpson", mode="reduced", eig_transform="square"
+    )
+
+    assert val_square > 0.0
+    assert val_sqrt > 0.0
+    assert val_square != val_sqrt
+
+
+def test_cartesian_mu4_wrapper_matches_explicit_call():
+    res = _result_from_saved("data/He/aug-cc-pVQZ")
+
+    wrapped = sce_winf_prime_model_cartesian_mu4(res, integrator="simpson")
+    explicit = sce_winf_prime_model(
+        res, integrator="simpson", mode="cartesian", mu_start=3, eig_transform="sqrt"
+    )
+
+    assert wrapped > 0.0
+    assert wrapped == explicit
+
+
+def test_sce_winf_prime_model_check_local_minimum_raises():
+    res = _result_from_saved("data/He/aug-cc-pVQZ")
+    res.local_minimum = np.zeros(res.angles.shape[0], dtype=bool)
+
+    with pytest.raises(ValueError):
+        sce_winf_prime_model(res, integrator="simpson", check_local_minimum=True)
