@@ -267,6 +267,7 @@ if __name__ == "__main__":
         eig_transform="sqrt",
         prefactor=1.0,
         fd_eps=1e-4,
+        check_local_minimum=True,
     )
     Lambda = -Winf / density.LDA_int
     B = (Winf - A * density.LDA_int) / density.GEA_int

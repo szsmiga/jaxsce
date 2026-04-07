@@ -232,6 +232,7 @@ def sce_winf_prime_model(
     eig_transform: str = "sqrt",
     prefactor: float = 1.0,
     fd_eps: float = 1e-4,
+    check_local_minimum: bool = False,
 ) -> float:
     r"""
     Compute an SCE :math:`W_\infty'` model from Eq. 81-inspired local frequencies.
@@ -269,6 +270,9 @@ def sce_winf_prime_model(
         Other conventions can be recovered via explicit scaling (e.g. 0.5 or 0.25).
     fd_eps : float, optional
         Finite-difference step for ``mode='cartesian_fd_epot'``.
+    check_local_minimum : bool, optional
+        If ``True``, require all optimized grid points used in the integration
+        to be marked as local minima before constructing Hessians.
 
     Returns
     -------
@@ -284,6 +288,16 @@ def sce_winf_prime_model(
         raise ValueError("SCE W'_inf model requires a coordinate system in the result object.")
 
     N_grid_end = res.angles.shape[0]
+
+    if check_local_minimum and hasattr(res, "local_minimum") and res.local_minimum is not None:
+        local_minimum = np.asarray(res.local_minimum)[:N_grid_end]
+        if not np.all(local_minimum):
+            n_bad = int(np.size(local_minimum) - np.count_nonzero(local_minimum))
+            raise ValueError(
+                f"W'_inf full-Hessian workflow requires local minima on all grid points; "
+                f"found {n_bad} non-minimum points."
+            )
+
     omega_sums = np.zeros(N_grid_end)
     for idx in range(N_grid_end):
         eigvals = _hessian_eigvals(

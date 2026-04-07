@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from jaxsce.coordinates_3d import get_coordinate_system
 from jaxsce.integrate import sce_winf_prime_model, sce_winf_prime_model_cartesian_mu4
@@ -97,3 +98,11 @@ def test_cartesian_mu4_wrapper_matches_explicit_call():
 
     assert wrapped > 0.0
     assert wrapped == explicit
+
+
+def test_sce_winf_prime_model_check_local_minimum_raises():
+    res = _result_from_saved("data/He/aug-cc-pVQZ")
+    res.local_minimum = np.zeros(res.angles.shape[0], dtype=bool)
+
+    with pytest.raises(ValueError):
+        sce_winf_prime_model(res, integrator="simpson", check_local_minimum=True)
