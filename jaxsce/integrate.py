@@ -4,9 +4,12 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import scipy
+import jax.numpy as jnp
+from jax import grad, jacfwd
 import scipy.integrate
 import scipy.interpolate
 
+from .coordinates_3d import Vee_cartesian
 from .optimize import AngularOptimizationResult
 
 
@@ -111,6 +114,248 @@ scipy_integrators = {
     "simpson": scipy.integrate.simpson,
     "romb": scipy.integrate.romb,
 }
+
+
+def _mode_sum_from_eigvals(
+    eigvals: np.ndarray,
+    min_eig: float = 0.0,
+    mu_start: int = 0,
+    transform: str = "sqrt",
+) -> float:
+    r"""Compute :math:`\sum_{\mu=\mu_0}^{M} f(\lambda_\mu)` from Hessian eigenvalues."""
+
+    eigvals = np.asarray(eigvals)
+    if mu_start < 0:
+        raise ValueError(f"mu_start must be non-negative, got {mu_start}")
+    if mu_start >= eigvals.size:
+        return 0.0
+    eigvals = np.clip(eigvals[mu_start:], min_eig, None)
+
+    if transform == "sqrt":
+        return float(np.sum(np.sqrt(eigvals)))
+    if transform == "linear":
+        return float(np.sum(eigvals))
+    if transform == "square":
+        return float(np.sum(eigvals**2))
+    raise ValueError(f"Unknown transform {transform}")
+
+
+def _hessian_eigvals(
+    coordinates,
+    angles: np.ndarray,
+    f: np.ndarray,
+    mode: str,
+    density=None,
+    fd_eps: float = 1e-4,
+) -> np.ndarray:
+    """Build eigenvalues for the requested Hessian model."""
+
+    if mode == "angular":
+        hessian = np.asarray(coordinates.Vee_hessian_angles(angles, f))
+    elif mode == "reduced":
+        h_aa = np.asarray(coordinates.Vee_hessian_angles(angles, f))
+        h_rr = np.asarray(coordinates.Vee_hessian_radials(angles, f))
+        h_ar = np.asarray(coordinates.Vee_hessian_angles_radials(angles, f))
+        hessian = np.block([[h_aa, h_ar], [h_ar.T, h_rr]])
+    elif mode == "spherical_full":
+        x0 = np.concatenate((np.asarray(f), np.asarray(angles)))
+        Nel = f.shape[0]
+
+        def vee_spherical(x):
+            return coordinates.Vee(x[Nel:], x[:Nel])
+
+        hessian = np.asarray(jacfwd(grad(vee_spherical))(x0))
+    elif mode == "cartesian":
+        coords = np.asarray(coordinates.cartesian_coordinates(jnp.asarray(f), jnp.asarray(angles)))
+        Nel = coords.shape[0]
+
+        def vee_flat(x_flat):
+            return Vee_cartesian(x_flat.reshape(Nel, 3))
+
+        hessian = np.asarray(jacfwd(grad(vee_flat))(coords.reshape(-1)))
+    elif mode in ("cartesian_fd", "cartesian_fd_epot"):
+        coords = np.asarray(coordinates.cartesian_coordinates(jnp.asarray(f), jnp.asarray(angles)))
+        Nel = coords.shape[0]
+        x0 = coords.reshape(-1)
+        dim = x0.size
+
+        if mode == "cartesian_fd_epot":
+            if density is None:
+                raise ValueError("mode='cartesian_fd_epot' requires a density on the result object")
+            if hasattr(density, "mol") and getattr(density.mol, "natm", 0) == 1:
+                z_nuc = float(density.mol.atom_charge(0))
+            else:
+                raise ValueError(
+                    "mode='cartesian_fd_epot' currently supports atomic one-center densities only"
+                )
+
+            def e_flat(x_flat):
+                xyz = x_flat.reshape(Nel, 3)
+                vee = float(Vee_cartesian(xyz))
+                r = np.linalg.norm(xyz, axis=1)
+                vext = float(np.sum(-z_nuc / r))
+                return vee + vext
+
+        else:
+
+            def e_flat(x_flat):
+                xyz = x_flat.reshape(Nel, 3)
+                return float(Vee_cartesian(xyz))
+
+        hessian = np.zeros((dim, dim), dtype=float)
+        for i in range(dim):
+            ei = np.zeros(dim)
+            ei[i] = fd_eps
+            for j in range(i, dim):
+                ej = np.zeros(dim)
+                ej[j] = fd_eps
+                e_pp = e_flat(x0 + ei + ej)
+                e_pm = e_flat(x0 + ei - ej)
+                e_mp = e_flat(x0 - ei + ej)
+                e_mm = e_flat(x0 - ei - ej)
+                val = (e_pp - e_pm - e_mp + e_mm) / (4.0 * fd_eps**2)
+                hessian[i, j] = val
+                hessian[j, i] = val
+    else:
+        raise ValueError(f"Unknown mode {mode}")
+
+    return np.linalg.eigvalsh(hessian)
+
+
+def sce_winf_prime_model(
+    res: AngularOptimizationResult,
+    *,
+    min_eig: float = 0.0,
+    integrator: str = "simpson",
+    mode: str = "spherical_full",
+    mu_start: int = 0,
+    eig_transform: str = "sqrt",
+    prefactor: float = 1.0,
+    fd_eps: float = 1e-4,
+    check_local_minimum: bool = False,
+) -> float:
+    r"""
+    Compute an SCE :math:`W_\infty'` model from Eq. 81-inspired local frequencies.
+
+    Parameters
+    ----------
+    res : AngularOptimizationResult
+        Result object containing the optimized angles and co-motion functions.
+    min_eig : float, optional
+        Lower clipping value for Hessian eigenvalues before taking square roots.
+    integrator : str, optional
+        Numerical quadrature method, either ``"trapezoid"`` or ``"simpson"``.
+    mode : str, optional
+        ``"spherical_full"`` (default) computes the Hessian of ``Vee`` with
+        respect to all spherical variables used by the coordinate system
+        (all radial + all active angular coordinates).
+        ``"reduced"`` uses the equivalent block assembly from angle-angle,
+        angle-radial and radial-radial derivatives.
+        ``"angular"`` reproduces the angular-only approximation.
+        ``"cartesian"`` uses the full 3N Cartesian Hessian of ``Vee``.
+        ``"cartesian_fd"`` uses a symmetric finite-difference Cartesian Hessian of ``Vee``.
+        ``"cartesian_fd_epot"`` uses the same finite-difference construction for
+        the full potential energy ``E_pot = Vee + sum_i v_ext(r_i)``.
+    mu_start : int, optional
+        Index of the first mode to include in the local sum. For the formal
+        expression :math:`\sum_{\mu=4}^{3N}` this corresponds to ``mu_start=3``
+        (0-indexed).
+    eig_transform : str, optional
+        Mode contribution transform. ``"sqrt"`` uses ``sum(sqrt(eigvals))``
+        (current physical model). ``"linear"`` uses ``sum(eigvals)`` and
+        ``"square"`` uses ``sum(eigvals**2)`` for sensitivity checks.
+    prefactor : float, optional
+        Global prefactor multiplying the radial integral. ``1.0`` corresponds
+        to the raw integral over the code's one-shell fundamental domain.
+        Other conventions can be recovered via explicit scaling (e.g. 0.5 or 0.25).
+    fd_eps : float, optional
+        Finite-difference step for ``mode='cartesian_fd_epot'``.
+    check_local_minimum : bool, optional
+        If ``True``, require all optimized grid points used in the integration
+        to be marked as local minima before constructing Hessians.
+
+    Returns
+    -------
+    float
+        Model value for :math:`W_\infty'` on the code's working shell grid.
+    """
+    if isinstance(res, AngularOptimizationResult):
+        res = AngularOptimizationResult.to_numpy(res)
+
+    if hasattr(res.opt, "coordinates"):
+        coordinates = res.opt.coordinates
+    else:
+        raise ValueError("SCE W'_inf model requires a coordinate system in the result object.")
+
+    N_grid_end = res.angles.shape[0]
+
+    if check_local_minimum and hasattr(res, "local_minimum") and res.local_minimum is not None:
+        local_minimum = np.asarray(res.local_minimum)[:N_grid_end]
+        if not np.all(local_minimum):
+            n_bad = int(np.size(local_minimum) - np.count_nonzero(local_minimum))
+            raise ValueError(
+                f"W'_inf full-Hessian workflow requires local minima on all grid points; "
+                f"found {n_bad} non-minimum points."
+            )
+
+    omega_sums = np.zeros(N_grid_end)
+    for idx in range(N_grid_end):
+        eigvals = _hessian_eigvals(
+            coordinates,
+            res.angles[idx],
+            res.f[idx],
+            mode=mode,
+            density=getattr(res, "density", None),
+            fd_eps=fd_eps,
+        )
+        omega_sums[idx] = _mode_sum_from_eigvals(
+            eigvals, min_eig=min_eig, mu_start=mu_start, transform=eig_transform
+        )
+
+    if res.opt.grid == "r":
+        x = res.r[:N_grid_end]
+        y = 4 * np.pi * x**2 * res.rho[:N_grid_end] * omega_sums
+    elif res.opt.grid == "Ne":
+        x = res.Ne[:N_grid_end]
+        y = omega_sums
+    else:
+        raise ValueError(f"Unknown grid type {res.opt.grid}")
+
+    if integrator == "trapezoid":
+        integral = scipy.integrate.trapezoid(y, x)
+    elif integrator == "simpson":
+        integral = scipy.integrate.simpson(y, x)
+    else:
+        raise ValueError(f"Unknown integrator {integrator}")
+
+    # The current optimization/integration pipeline works on one shell in Ne-space
+    # (Ne in [1, 2]); matching the repository's Winf convention this gives
+    # the correct normalization without an additional 1/N factor.
+    return float(prefactor * integral)
+
+
+def sce_winf_prime_model_cartesian_mu4(
+    res: AngularOptimizationResult,
+    *,
+    min_eig: float = 0.0,
+    integrator: str = "simpson",
+) -> float:
+    r"""Convenience wrapper for :math:`\sum_{\mu=4}^{3N}\sqrt{\lambda_\mu}` in Cartesian space.
+
+    This follows the strict full-Cartesian interpretation often used for the
+    local ZPE-like correction: build the full ``3N x 3N`` Cartesian Hessian,
+    skip the first three modes (``mu_start=3``), and sum square roots of the
+    remaining eigenvalues.
+    """
+
+    return sce_winf_prime_model(
+        res,
+        min_eig=min_eig,
+        integrator=integrator,
+        mode="cartesian",
+        mu_start=3,
+        eig_transform="sqrt",
+    )
 
 
 class VeeIntegration:
