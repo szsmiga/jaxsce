@@ -337,15 +337,27 @@ class HFDensity(PyscfDensity):
         chkfile_name: str = "",
         chkfile_dir="",
         fractional_occ: bool = True,
+        hf_method: str = "auto",
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.name = "hartree-fock"
         self.fractional_occ = fractional_occ
+        self.hf_method = hf_method
 
-        # Setup the RHF calculation
-        mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
-        if self.spin != 0 and fractional_occ:
+        # Setup HF calculation
+        if hf_method == "auto":
+            mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
+        elif hf_method == "rhf":
+            mf = scf.RHF(self.mol)
+        elif hf_method == "rohf":
+            mf = scf.ROHF(self.mol)
+        elif hf_method == "uhf":
+            mf = scf.UHF(self.mol)
+        else:
+            raise ValueError(f"Unknown hf_method {hf_method}")
+
+        if self.spin != 0 and fractional_occ and hf_method in ("auto", "rohf"):
             # For open-shell atoms, use fractional occupations for degenerate
             # frontier levels to keep the density closer to spherical.
             mf = scf.addons.frac_occ(mf)
@@ -388,6 +400,7 @@ class HFDensity(PyscfDensity):
                 "chkfile_name": self.chkfile_name,
                 "chkfile_dir": self.chkfile_dir,
                 "fractional_occ": self.fractional_occ,
+                "hf_method": self.hf_method,
             }
         )
         return encode_dict
