@@ -426,10 +426,14 @@ class CCSDDensity(PyscfDensity):
         dm_file_dir: str = "",
         chkfile_name: str = "",
         chkfile_dir: str = "",
+        hf_method: str = "auto",
+        fractional_occ: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.name = "ccsd"
+        self.hf_method = hf_method.lower()
+        self.fractional_occ = fractional_occ
         if dm_file_name == "":
             raise ValueError("dm_file_name must be given")
         self.dm_file_name = dm_file_name
@@ -485,6 +489,8 @@ class CCSDDensity(PyscfDensity):
                 "dm_file_dir": self.dm_file_dir,
                 "chkfile_name": self.chkfile_name,
                 "chkfile_dir": self.chkfile_dir,
+                "hf_method": self.hf_method,
+                "fractional_occ": self.fractional_occ,
             }
         )
         return encode_dict

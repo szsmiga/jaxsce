@@ -119,7 +119,7 @@ scipy_integrators = {
 def _mode_sum_from_eigvals(
     eigvals: np.ndarray,
     min_eig: float = 0.0,
-    mu_start: int = 0,
+    mu_start: int = 3,
     transform: str = "sqrt",
 ) -> float:
     r"""Compute :math:`\sum_{\mu=\mu_0}^{M} f(\lambda_\mu)` from Hessian eigenvalues."""
@@ -228,7 +228,7 @@ def sce_winf_prime_model(
     min_eig: float = 0.0,
     integrator: str = "simpson",
     mode: str = "spherical_full",
-    mu_start: int = 0,
+    mu_start: int = 3,
     eig_transform: str = "sqrt",
     prefactor: float = 1.0,
     fd_eps: float = 1e-4,
