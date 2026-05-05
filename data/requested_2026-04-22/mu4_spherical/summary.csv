@@ -1,0 +1,9 @@
+system,density,basis,wavefunction,grid,mode,eig_transform,prefactor,mu_start,Nel,local_min,value,status,time_s,note
+He,HF,aug-cc-pVQZ,RHF,Ne,spherical_full,sqrt,0.5,4,2,n/a,0.0,OK,12.4,
+He,CCSD,aug-cc-pVQZ,RHF,Ne,spherical_full,sqrt,0.5,4,2,n/a,0.0,OK,9.9,
+Be,HF,aug-cc-pCVQZ,RHF,Ne,spherical_full,sqrt,0.5,4,4,True,2.50604264313976,OK,276.8,
+Be,CCSD,aug-cc-pCVQZ,RHF,Ne,spherical_full,sqrt,0.5,4,4,False,2.5277699772268534,OK,402.6,
+Li-,HF,aug-cc-pCVQZ,RHF,Ne,spherical_full,sqrt,0.5,4,4,True,1.4705193893363078,OK,417.0,
+Li-,CCSD,aug-cc-pCVQZ,RHF,Ne,spherical_full,sqrt,0.5,4,4,False,1.493486403177182,OK,359.7,
+Li,HF,aug-cc-pCVQZ,UHF,Ne,spherical_full,sqrt,0.5,4,3,True,1.1163155206789572,OK,265.1,
+Li,CCSD,aug-cc-pCVQZ,UHF,Ne,spherical_full,sqrt,0.5,4,3,True,1.1155856816718974,OK,397.4,
