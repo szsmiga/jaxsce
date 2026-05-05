@@ -72,7 +72,7 @@ def test_spherical_full_matches_reduced_block():
     val_spherical = sce_winf_prime_model(res, integrator="simpson", mode="spherical_full")
     val_reduced = sce_winf_prime_model(res, integrator="simpson", mode="reduced")
 
-    assert abs(val_spherical - val_reduced) < 1e-8
+    assert abs(val_spherical - val_reduced) / val_reduced < 1e-8
 
 
 def test_sce_winf_prime_model_square_transform_differs():

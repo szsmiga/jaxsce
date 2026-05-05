@@ -343,21 +343,21 @@ class HFDensity(PyscfDensity):
         super().__init__(**kwargs)
         self.name = "hartree-fock"
         self.fractional_occ = fractional_occ
-        self.hf_method = hf_method.lower()
+        self.hf_method = hf_method
 
         # Setup HF calculation
-        if self.hf_method == "auto":
+        if hf_method == "auto":
             mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
-        elif self.hf_method == "rhf":
+        elif hf_method == "rhf":
             mf = scf.RHF(self.mol)
-        elif self.hf_method == "rohf":
+        elif hf_method == "rohf":
             mf = scf.ROHF(self.mol)
-        elif self.hf_method == "uhf":
+        elif hf_method == "uhf":
             mf = scf.UHF(self.mol)
         else:
             raise ValueError(f"Unknown hf_method {hf_method}")
 
-        if self.spin != 0 and fractional_occ and self.hf_method in ("auto", "rohf"):
+        if self.spin != 0 and fractional_occ and hf_method in ("auto", "rohf"):
             # For open-shell atoms, use fractional occupations for degenerate
             # frontier levels to keep the density closer to spherical.
             mf = scf.addons.frac_occ(mf)
@@ -450,19 +450,8 @@ class CCSDDensity(PyscfDensity):
             # Simply load the density matrix in AO basis if it exists
             self.dm = np.load(dm_file)
         else:
-            # Run HF reference calculation if necessary
-            if self.hf_method == "auto":
-                mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
-            elif self.hf_method == "rhf":
-                mf = scf.RHF(self.mol)
-            elif self.hf_method == "rohf":
-                mf = scf.ROHF(self.mol)
-            elif self.hf_method == "uhf":
-                mf = scf.UHF(self.mol)
-            else:
-                raise ValueError(f"Unknown hf_method {hf_method}")
-            if self.spin != 0 and fractional_occ and self.hf_method in ("auto", "rohf"):
-                mf = scf.addons.frac_occ(mf)
+            # Run RHF calculation if necessary
+            mf = scf.ROHF(self.mol) if self.spin != 0 else scf.RHF(self.mol)
             mf.conv_tol = 1e-12
             mf.conv_tol_grad = 1e-11
             mf.max_cycle = 1000
