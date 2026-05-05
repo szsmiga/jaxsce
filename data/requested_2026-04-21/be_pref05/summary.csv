@@ -1,0 +1,3 @@
+system,density,basis,wavefunction,grid,mode_spherical_full,mode_reduced,eig_transform,prefactor,local_min,status,time_s,note
+Be,HF,aug-cc-pCVQZ,RHF,Ne,2.8140477668493986,2.814048084740837,sqrt,0.5,True,OK,530.1,
+Be,CCSD,aug-cc-pCVQZ,RHF,Ne,2.8439296068002777,2.843929208194216,sqrt,0.5,False,OK,754.9,

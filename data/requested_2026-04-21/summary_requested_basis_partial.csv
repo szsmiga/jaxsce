@@ -1,0 +1,13 @@
+system,density,basis,Nel,local_min,spherical_full,reduced,status,time_s,notes
+H-,HF,aug-cc-pVQZ,2,n/a,0.38510226852122287,0.38510226872252434,OK,,computed with default optimization settings
+H-,CCSD,aug-cc-pVQZ,2,n/a,0.36780089994378307,0.36780090013477695,OK,,computed with default optimization settings
+He,HF,aug-cc-pVQZ,2,n/a,1.1451690412941389,1.1451690414299567,OK,,computed with default optimization settings
+He,CCSD,aug-cc-pVQZ,2,n/a,1.141620035486994,1.1416200374781815,OK,,computed with default optimization settings
+Li,HF,aug-cc-pCVQZ,,,,,PENDING,,not finished in this run
+Li,CCSD,aug-cc-pCVQZ,,,,,PENDING,,not finished in this run
+Li-,HF,aug-cc-pCVQZ,,,,,PENDING,,not finished in this run
+Li-,CCSD,aug-cc-pCVQZ,,,,,PENDING,,not finished in this run
+Be,HF,aug-cc-pCVQZ,,,,,PENDING,,not finished in this run
+Be,CCSD,aug-cc-pCVQZ,,,,,PENDING,,not finished in this run
+Ne,HF,aug-cc-pCVDZ,,,,,PENDING,,not finished in this run
+Ne,CCSD,aug-cc-pCVDZ,,,,,PENDING,,not finished in this run
